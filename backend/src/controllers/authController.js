@@ -102,3 +102,29 @@ exports.getMe = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+// @desc    Register user face data
+// @route   PUT /api/auth/face-data
+// @access  Private
+exports.registerFace = async (req, res) => {
+  try {
+    const { faceDescriptor } = req.body;
+
+    if (!faceDescriptor) {
+      return res.status(400).json({ success: false, message: 'No face data provided' });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user.id,
+      { faceDescriptor },
+      { new: true, runValidators: true }
+    );
+
+    res.status(200).json({
+      success: true,
+      message: 'Face data registered successfully',
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};

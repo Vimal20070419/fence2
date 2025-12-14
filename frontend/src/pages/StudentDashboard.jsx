@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
-import { MapPin, CheckCircle, XCircle } from 'lucide-react';
+import { MapPin, CheckCircle, XCircle, Camera, UserCheck } from 'lucide-react';
+import FaceCam from '../components/FaceCam';
 
 const StudentDashboard = () => {
   const { user } = useAuth();
@@ -10,6 +11,11 @@ const StudentDashboard = () => {
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [history, setHistory] = useState([]);
+  
+  // Face Attendance States
+  const [showFaceCam, setShowFaceCam] = useState(false);
+  const [faceMode, setFaceMode] = useState('enroll'); // 'enroll' or 'verify'
+  const [faceVerified, setFaceVerified] = useState(false);
 
   useEffect(() => {
     fetchHistory();
@@ -44,9 +50,29 @@ const StudentDashboard = () => {
   };
 
   const handleMarkAttendance = async () => {
+    // 1. Check Geolocation
     if (!location) {
       setError('Waiting for location...');
       return;
+    }
+
+    // 2. Check if Face is verified (if user has face data)
+    // For now, we assume if they have face data, they MUST verify. 
+    // If they don't, they MUST enroll first.
+    if (!user.faceDescriptor && !faceVerified) {
+       // Prompt Enrollment
+       setFaceMode('enroll');
+       setShowFaceCam(true);
+       setMessage('Please enroll your face first.');
+       return;
+    }
+
+    if (user.faceDescriptor && !faceVerified) {
+       // Prompt Verification
+       setFaceMode('verify');
+       setShowFaceCam(true);
+       setMessage('Please verify your face identity.');
+       return;
     }
 
     setLoading(true);
@@ -59,12 +85,48 @@ const StudentDashboard = () => {
         longitude: location.longitude,
       });
       setMessage(`Success! Marked attendance at ${res.data.locationName}`);
+      setFaceVerified(false); // Reset verification
       fetchHistory(); // Refresh history
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to mark attendance');
     } finally {
       setLoading(false);
     }
+  };
+
+  const onFaceDetected = async (data) => {
+     setShowFaceCam(false);
+     
+     if (faceMode === 'enroll') {
+        // Data is descriptor
+        try {
+           setLoading(true);
+           const token = localStorage.getItem('token');
+           // You need to ensure AuthContext or axios interceptor attaches token usually, 
+           // but here we might need to manually or use configured axios instance.
+           // Assuming global setup or manual header:
+             await axios.put('http://localhost:5000/api/auth/face-data', 
+              { faceDescriptor: data },
+              { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } }
+           );
+           
+           setMessage('Face enrolled successfully! Now you can mark attendance.');
+           // Ideally update user context here to reflect hasFaceDescriptor = true
+           // For now, simple reload or optimistic update might be needed if AuthContext doesn't auto-refresh
+           window.location.reload(); 
+        } catch (err) {
+           setError('Failed to enroll face.');
+           console.error(err);
+        } finally {
+           setLoading(false);
+        }
+     } else if (faceMode === 'verify') {
+        // Data is boolean true
+        setFaceVerified(true);
+        setMessage('Face Verified! Click Mark Attendance again.');
+        // Auto-trigger mark attendance? Or let them click? 
+        // Let's let them click for better UX feedback.
+     }
   };
 
   return (
@@ -99,16 +161,32 @@ const StudentDashboard = () => {
              </p>
              <p className="text-xs text-gray-400 mt-1">Accuracy: {location?.accuracy?.toFixed(1)}m</p>
           </div>
+          
+          {/* Face Cam Modal Overlay or Inline */}
+          {showFaceCam && (
+            <div className="mb-6">
+               <h4 className="text-lg font-medium mb-2">{faceMode === 'enroll' ? 'Enroll Your Face' : 'Verify Identity'}</h4>
+               <FaceCam 
+                 mode={faceMode} 
+                 onFaceDetected={onFaceDetected}
+                 existingDescriptor={user?.faceDescriptor ? Object.values(user.faceDescriptor) : null}
+               />
+               <button onClick={() => setShowFaceCam(false)} className="mt-2 text-sm text-red-500 underline">Cancel</button>
+            </div>
+          )}
 
-          <button
-            onClick={handleMarkAttendance}
-            disabled={loading || !location}
-            className={`inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
-              loading || !location ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
-            }`}
-          >
-            {loading ? 'Verifying Location...' : 'Mark Attendance'}
-          </button>
+          {!showFaceCam && (
+            <button
+              onClick={handleMarkAttendance}
+              disabled={loading || !location}
+              className={`inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 ${
+                loading || !location ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'
+              }`}
+            >
+              <UserCheck className="w-5 h-5 mr-2" />
+              {loading ? 'Processing...' : (faceVerified ? 'Confirm Attendance' : (user?.faceDescriptor ? 'Verify & Mark Attendance' : 'Enroll Face & Mark'))}
+            </button>
+          )}
         </div>
       </div>
 

@@ -34,6 +34,10 @@ const UserSchema = new mongoose.Schema({
   studentId: { // For students
     type: String,
   },
+  faceDescriptor: {
+    type: Object,
+    default: null,
+  },
   createdAt: {
     type: Date,
     default: Date.now,
